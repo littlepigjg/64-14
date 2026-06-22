@@ -594,8 +594,11 @@ export default function Dashboard() {
                       contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0' }}
                     />
                     <Bar dataKey="size" name="存储大小" radius={[0, 4, 4, 0]}>
-                      {scopeStats.map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      {scopeStats.slice(0, 15).map((entry, index) => (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={entry.uncategorized ? '#cbd5e1' : COLORS[index % COLORS.length]}
+                        />
                       ))}
                     </Bar>
                   </BarChart>
@@ -611,35 +614,48 @@ export default function Dashboard() {
           <div className="card p-6">
             <h2 className="text-lg font-semibold text-slate-800 mb-4">Scope 明细</h2>
             <div className="space-y-3 max-h-96 overflow-y-auto">
-              {scopeStats.map((scope, idx) => (
-                <div key={scope.scope} className="p-3 bg-slate-50 rounded-lg">
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="w-3 h-3 rounded-full"
-                        style={{ backgroundColor: COLORS[idx % COLORS.length] }}
-                      />
-                      <span className="font-medium text-sm text-slate-800 truncate max-w-32">
-                        {scope.scope}
-                      </span>
+              {scopeStats.map((scope, idx) => {
+                const color = scope.uncategorized ? '#cbd5e1' : COLORS[idx % COLORS.length];
+                return (
+                  <div
+                    key={scope.scope}
+                    className={`p-3 rounded-lg ${
+                      scope.uncategorized ? 'bg-slate-100 border border-dashed border-slate-300' : 'bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: color }}
+                        />
+                        <span className="font-medium text-sm text-slate-800 truncate max-w-32">
+                          {scope.scope}
+                        </span>
+                        {scope.uncategorized && (
+                          <span className="px-1.5 py-0.5 text-xs bg-slate-200 text-slate-500 rounded">
+                            未分类
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs text-slate-500">{scope.percent.toFixed(1)}%</span>
                     </div>
-                    <span className="text-xs text-slate-500">{scope.percent.toFixed(1)}%</span>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-500">{formatNumber(scope.packages)} 个包</span>
+                      <span className="font-semibold text-slate-800">{formatSize(scope.size)}</span>
+                    </div>
+                    <div className="progress-bar h-1.5 mt-2">
+                      <div
+                        className="progress-fill"
+                        style={{
+                          width: `${scope.percent}%`,
+                          backgroundColor: color,
+                        }}
+                      />
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-500">{formatNumber(scope.packages)} 个包</span>
-                    <span className="font-semibold text-slate-800">{formatSize(scope.size)}</span>
-                  </div>
-                  <div className="progress-bar h-1.5 mt-2">
-                    <div
-                      className="progress-fill"
-                      style={{
-                        width: `${scope.percent}%`,
-                        backgroundColor: COLORS[idx % COLORS.length],
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
+                );
+              })}
               {scopeStats.length === 0 && (
                 <div className="text-center py-8 text-slate-400 text-sm">
                   暂无数据

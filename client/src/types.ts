@@ -81,6 +81,7 @@ export interface ScopeStats {
   packages: number;
   size: number;
   percent: number;
+  uncategorized: boolean;
 }
 
 export interface LargestPackage {
