@@ -469,22 +469,12 @@ export class MetadataIndex {
 
   getStatsByScope(): ScopeStats[] {
     const scopeMap = new Map<string, { packages: number; size: number; uncategorized: boolean }>();
-    const totalSize = this.db.packages.reduce((s, p) => s + p.totalSize, 0);
+    const scopedPackages = this.db.packages.filter((p) => p.registry === 'npm' && p.scope);
+    const totalSize = scopedPackages.reduce((s, p) => s + p.totalSize, 0);
 
-    const UNCATEGORIZED = '__uncategorized__';
-
-    for (const pkg of this.db.packages) {
-      if (!pkg.scope) {
-        const existing = scopeMap.get(UNCATEGORIZED) || { packages: 0, size: 0, uncategorized: true };
-        scopeMap.set(UNCATEGORIZED, {
-          packages: existing.packages + 1,
-          size: existing.size + pkg.totalSize,
-          uncategorized: true,
-        });
-        continue;
-      }
-      const existing = scopeMap.get(pkg.scope) || { packages: 0, size: 0, uncategorized: false };
-      scopeMap.set(pkg.scope, {
+    for (const pkg of scopedPackages) {
+      const existing = scopeMap.get(pkg.scope!) || { packages: 0, size: 0, uncategorized: false };
+      scopeMap.set(pkg.scope!, {
         packages: existing.packages + 1,
         size: existing.size + pkg.totalSize,
         uncategorized: false,
@@ -493,20 +483,16 @@ export class MetadataIndex {
 
     const result: ScopeStats[] = [];
     for (const [scope, data] of scopeMap.entries()) {
-      const displayName = scope === UNCATEGORIZED ? '未分类（无 Scope）' : scope;
       result.push({
-        scope: displayName,
+        scope,
         packages: data.packages,
         size: data.size,
         percent: totalSize > 0 ? Math.round((data.size / totalSize) * 10000) / 100 : 0,
-        uncategorized: data.uncategorized,
+        uncategorized: false,
       });
     }
 
-    return result.sort((a, b) => {
-      if (a.uncategorized !== b.uncategorized) return a.uncategorized ? 1 : -1;
-      return b.size - a.size;
-    });
+    return result.sort((a, b) => b.size - a.size);
   }
 
   getLargestPackages(limit: number = 20): LargestPackage[] {
@@ -560,8 +546,9 @@ export class MetadataIndex {
 
     const byScope: Record<string, number> = {};
     for (const pkg of this.db.packages) {
-      const scopeKey = pkg.scope || '未分类（无 Scope）';
-      byScope[scopeKey] = (byScope[scopeKey] || 0) + pkg.totalSize;
+      if (pkg.registry === 'npm' && pkg.scope) {
+        byScope[pkg.scope] = (byScope[pkg.scope] || 0) + pkg.totalSize;
+      }
     }
 
     const snapshot: StorageSnapshot = {

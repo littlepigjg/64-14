@@ -564,7 +564,19 @@ export default function Dashboard() {
       {activeTab === 'scope' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="card p-6 lg:col-span-2">
-            <h2 className="text-lg font-semibold text-slate-800 mb-4">按 Scope 存储分布</h2>
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-800">NPM Scope 存储分布</h2>
+                <p className="text-sm text-slate-500 mt-1">
+                  仅统计带 @scope/ 命名空间的 NPM 私有包，PyPI 包和无 scope 的公共包不计入
+                </p>
+              </div>
+              {scopeStats.length > 0 && (
+                <span className="badge bg-indigo-50 text-indigo-600">
+                  {scopeStats.length} 个命名空间 · {formatSize(scopeStats.reduce((s, v) => s + v.size, 0))}
+                </span>
+              )}
+            </div>
             <div className="h-96">
               {scopeStats.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
@@ -594,18 +606,19 @@ export default function Dashboard() {
                       contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0' }}
                     />
                     <Bar dataKey="size" name="存储大小" radius={[0, 4, 4, 0]}>
-                      {scopeStats.slice(0, 15).map((entry, index) => (
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={entry.uncategorized ? '#cbd5e1' : COLORS[index % COLORS.length]}
-                        />
+                      {scopeStats.slice(0, 15).map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="h-full flex items-center justify-center text-slate-400 text-sm">
-                  暂无 Scope 数据
+                <div className="h-full flex flex-col items-center justify-center text-slate-400 text-sm">
+                  <PackageIcon size={32} className="mb-3 opacity-40" />
+                  <p>暂无 Scope 数据</p>
+                  <p className="text-xs mt-1 text-slate-400">
+                    上传带 @scope/ 命名空间的私有 NPM 包后，此图表将显示各命名空间的存储占用
+                  </p>
                 </div>
               )}
             </div>
@@ -614,48 +627,35 @@ export default function Dashboard() {
           <div className="card p-6">
             <h2 className="text-lg font-semibold text-slate-800 mb-4">Scope 明细</h2>
             <div className="space-y-3 max-h-96 overflow-y-auto">
-              {scopeStats.map((scope, idx) => {
-                const color = scope.uncategorized ? '#cbd5e1' : COLORS[idx % COLORS.length];
-                return (
-                  <div
-                    key={scope.scope}
-                    className={`p-3 rounded-lg ${
-                      scope.uncategorized ? 'bg-slate-100 border border-dashed border-slate-300' : 'bg-slate-50'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-3 h-3 rounded-full"
-                          style={{ backgroundColor: color }}
-                        />
-                        <span className="font-medium text-sm text-slate-800 truncate max-w-32">
-                          {scope.scope}
-                        </span>
-                        {scope.uncategorized && (
-                          <span className="px-1.5 py-0.5 text-xs bg-slate-200 text-slate-500 rounded">
-                            未分类
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-xs text-slate-500">{scope.percent.toFixed(1)}%</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-500">{formatNumber(scope.packages)} 个包</span>
-                      <span className="font-semibold text-slate-800">{formatSize(scope.size)}</span>
-                    </div>
-                    <div className="progress-bar h-1.5 mt-2">
+              {scopeStats.map((scope, idx) => (
+                <div key={scope.scope} className="p-3 bg-slate-50 rounded-lg">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
                       <div
-                        className="progress-fill"
-                        style={{
-                          width: `${scope.percent}%`,
-                          backgroundColor: color,
-                        }}
+                        className="w-3 h-3 rounded-full"
+                        style={{ backgroundColor: COLORS[idx % COLORS.length] }}
                       />
+                      <span className="font-medium text-sm text-slate-800 truncate max-w-32">
+                        {scope.scope}
+                      </span>
                     </div>
+                    <span className="text-xs text-slate-500">{scope.percent.toFixed(1)}%</span>
                   </div>
-                );
-              })}
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-500">{formatNumber(scope.packages)} 个包</span>
+                    <span className="font-semibold text-slate-800">{formatSize(scope.size)}</span>
+                  </div>
+                  <div className="progress-bar h-1.5 mt-2">
+                    <div
+                      className="progress-fill"
+                      style={{
+                        width: `${scope.percent}%`,
+                        backgroundColor: COLORS[idx % COLORS.length],
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
               {scopeStats.length === 0 && (
                 <div className="text-center py-8 text-slate-400 text-sm">
                   暂无数据
