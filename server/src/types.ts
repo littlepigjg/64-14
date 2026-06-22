@@ -37,12 +37,68 @@ export interface CacheStats {
   cachePackages: number;
   maxSize: number;
   usagePercent: number;
+  npmSize: number;
+  pypiSize: number;
+  privateSize: number;
+  cacheSize: number;
+  largestPackages: Array<{
+    name: string;
+    registry: RegistryType;
+    size: number;
+    versions: number;
+    growth: number;
+  }>;
+  recentGrowth: Array<{
+    date: string;
+    growth: number;
+  }>;
 }
 
 export interface StorageTrend {
   date: string;
   size: number;
   packages: number;
+  npmSize: number;
+  pypiSize: number;
+  privateSize: number;
+  cacheSize: number;
+}
+
+export interface RegistryBreakdown {
+  registry: RegistryType;
+  packages: number;
+  versions: number;
+  size: number;
+  percent: number;
+}
+
+export interface ScopeStats {
+  scope: string;
+  packages: number;
+  size: number;
+  percent: number;
+}
+
+export interface LargestPackage {
+  name: string;
+  registry: RegistryType;
+  source: PackageSource;
+  scope?: string;
+  size: number;
+  versions: number;
+  latestVersion: string;
+  updatedAt: number;
+  growth7d: number;
+  sizeRank: number;
+}
+
+export interface StorageSnapshot {
+  timestamp: number;
+  totalSize: number;
+  npmSize: number;
+  pypiSize: number;
+  privateSize: number;
+  byScope: Record<string, number>;
 }
 
 export interface CachePolicy {

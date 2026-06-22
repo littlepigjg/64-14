@@ -134,7 +134,36 @@ router.get('/stats', (_req: Request, res: Response) => {
 router.get('/stats/trend', (req: Request, res: Response) => {
   const metadata = getMetadataIndex();
   const days = parseInt(typeof req.query.days === 'string' ? req.query.days : '30', 10);
-  res.json(metadata.getStorageTrend(Math.min(days, 365)));
+  const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+  const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+  
+  if (startDate || endDate) {
+    res.json(metadata.getStorageTrendByRange(startDate, endDate));
+  } else {
+    res.json(metadata.getStorageTrend(Math.min(days, 365)));
+  }
+});
+
+router.get('/stats/breakdown', (_req: Request, res: Response) => {
+  const metadata = getMetadataIndex();
+  res.json({
+    registry: metadata.getRegistryBreakdown(),
+    source: [
+      { source: 'cache', size: metadata.getStats().cacheSize },
+      { source: 'private', size: metadata.getStats().privateSize },
+    ],
+  });
+});
+
+router.get('/stats/by-scope', (_req: Request, res: Response) => {
+  const metadata = getMetadataIndex();
+  res.json({ scopes: metadata.getStatsByScope() });
+});
+
+router.get('/stats/largest', (req: Request, res: Response) => {
+  const metadata = getMetadataIndex();
+  const limit = parseInt(typeof req.query.limit === 'string' ? req.query.limit : '20', 10);
+  res.json({ packages: metadata.getLargestPackages(Math.min(limit, 100)) });
 });
 
 router.get('/cache/policy', (_req: Request, res: Response) => {

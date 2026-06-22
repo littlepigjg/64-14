@@ -7,6 +7,9 @@ import type {
   HealthInfo,
   RegistryType,
   PackageSource,
+  StorageBreakdownResponse,
+  ScopeStatsResponse,
+  LargestPackagesResponse,
 } from './types';
 
 const API_BASE = '/api';
@@ -70,6 +73,20 @@ export const api = {
 
   getTrend: (days: number = 30) =>
     request<StorageTrend[]>(`/stats/trend?days=${days}`),
+
+  getTrendByRange: (startDate?: string, endDate?: string) => {
+    const qs = new URLSearchParams();
+    if (startDate) qs.set('startDate', startDate);
+    if (endDate) qs.set('endDate', endDate);
+    return request<StorageTrend[]>(`/stats/trend?${qs.toString()}`);
+  },
+
+  getBreakdown: () => request<StorageBreakdownResponse>('/stats/breakdown'),
+
+  getScopeStats: () => request<ScopeStatsResponse>('/stats/by-scope'),
+
+  getLargestPackages: (limit: number = 20) =>
+    request<LargestPackagesResponse>(`/stats/largest?limit=${limit}`),
 
   getCachePolicy: () => request<CachePolicy>('/cache/policy'),
 

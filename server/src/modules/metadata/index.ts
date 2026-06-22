@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { ensureDir, formatDate, getDirSize } from '../../utils';
 import { config } from '../../config';
-import type { PackageInfo, PackageVersion, CacheStats, StorageTrend, CachePolicy, RegistryType, PackageSource } from '../../types';
+import type { PackageInfo, PackageVersion, CacheStats, StorageTrend, CachePolicy, RegistryType, PackageSource, ScopeStats, LargestPackage, RegistryBreakdown, StorageSnapshot } from '../../types';
 
 interface DBPackage {
   id: number;
@@ -38,6 +38,7 @@ interface DB {
   versions: DBVersion[];
   storageTrend: StorageTrend[];
   cachePolicy: CachePolicy;
+  storageSnapshots: StorageSnapshot[];
 }
 
 const DEFAULT_POLICY: CachePolicy = {
@@ -71,6 +72,7 @@ export class MetadataIndex {
           versions: parsed.versions || [],
           storageTrend: parsed.storageTrend || [],
           cachePolicy: parsed.cachePolicy || { ...DEFAULT_POLICY, ...config.cache },
+          storageSnapshots: parsed.storageSnapshots || [],
         };
       } catch {
         // fall through to default
@@ -83,6 +85,7 @@ export class MetadataIndex {
       versions: [],
       storageTrend: [],
       cachePolicy: { ...DEFAULT_POLICY, ...config.cache },
+      storageSnapshots: [],
     };
   }
 
@@ -363,10 +366,33 @@ export class MetadataIndex {
     const privatePackages = this.db.packages.filter((p) => p.source === 'private').length;
     const cachePackages = this.db.packages.filter((p) => p.source === 'cache').length;
 
+    const npmSize = this.db.packages.filter((p) => p.registry === 'npm').reduce((s, p) => s + p.totalSize, 0);
+    const pypiSize = this.db.packages.filter((p) => p.registry === 'pypi').reduce((s, p) => s + p.totalSize, 0);
+    const privateSize = this.db.packages.filter((p) => p.source === 'private').reduce((s, p) => s + p.totalSize, 0);
+    const cacheSize = this.db.packages.filter((p) => p.source === 'cache').reduce((s, p) => s + p.totalSize, 0);
+
     const policy = this.getCachePolicy();
     const maxSizeBytes = policy.maxSizeGB * 1024 * 1024 * 1024;
     const dirSize = getDirSize(config.storageDir);
     const actualSize = Math.max(totalSize, dirSize);
+
+    const pkgVersionCounts: Record<number, number> = {};
+    for (const v of this.db.versions) {
+      pkgVersionCounts[v.packageId] = (pkgVersionCounts[v.packageId] || 0) + 1;
+    }
+
+    const largestPackages = [...this.db.packages]
+      .sort((a, b) => b.totalSize - a.totalSize)
+      .slice(0, 10)
+      .map((p) => ({
+        name: p.name,
+        registry: p.registry,
+        size: p.totalSize,
+        versions: pkgVersionCounts[p.id] || 0,
+        growth: this.calculatePackageGrowth(p.id, 7),
+      }));
+
+    const recentGrowth = this.calculateRecentGrowth(30);
 
     return {
       totalPackages,
@@ -378,7 +404,116 @@ export class MetadataIndex {
       cachePackages,
       maxSize: maxSizeBytes,
       usagePercent: actualSize > 0 && maxSizeBytes > 0 ? Math.min(100, (actualSize / maxSizeBytes) * 100) : 0,
+      npmSize,
+      pypiSize,
+      privateSize,
+      cacheSize,
+      largestPackages,
+      recentGrowth,
     };
+  }
+
+  private calculatePackageGrowth(packageId: number, days: number): number {
+    const pkg = this.db.packages.find((p) => p.id === packageId);
+    if (!pkg) return 0;
+
+    const now = Date.now();
+    const cutoff = now - days * 24 * 60 * 60 * 1000;
+    const recentVersions = this.db.versions.filter(
+      (v) => v.packageId === packageId && v.publishedAt >= cutoff
+    );
+    const recentSize = recentVersions.reduce((s, v) => s + v.size, 0);
+
+    if (pkg.totalSize === 0) return 0;
+    return Math.round((recentSize / pkg.totalSize) * 100);
+  }
+
+  private calculateRecentGrowth(days: number): Array<{ date: string; growth: number }> {
+    const trend = this.db.storageTrend.slice(-days);
+    if (trend.length < 2) return [];
+
+    const result: Array<{ date: string; growth: number }> = [];
+    for (let i = 1; i < trend.length; i++) {
+      const prev = trend[i - 1];
+      const curr = trend[i];
+      const growth = prev.size > 0 ? ((curr.size - prev.size) / prev.size) * 100 : 0;
+      result.push({
+        date: curr.date,
+        growth: Math.round(growth * 100) / 100,
+      });
+    }
+    return result;
+  }
+
+  getRegistryBreakdown(): RegistryBreakdown[] {
+    const totalSize = this.db.packages.reduce((s, p) => s + p.totalSize, 0);
+    const registries: RegistryType[] = ['npm', 'pypi'];
+
+    return registries.map((registry) => {
+      const pkgs = this.db.packages.filter((p) => p.registry === registry);
+      const versions = this.db.versions.filter((v) => {
+        const pkg = this.db.packages.find((p) => p.id === v.packageId);
+        return pkg?.registry === registry;
+      });
+      const size = pkgs.reduce((s, p) => s + p.totalSize, 0);
+
+      return {
+        registry,
+        packages: pkgs.length,
+        versions: versions.length,
+        size,
+        percent: totalSize > 0 ? Math.round((size / totalSize) * 10000) / 100 : 0,
+      };
+    });
+  }
+
+  getStatsByScope(): ScopeStats[] {
+    const scopeMap = new Map<string, { packages: number; size: number }>();
+    const totalSize = this.db.packages.reduce((s, p) => s + p.totalSize, 0);
+
+    for (const pkg of this.db.packages) {
+      const scope = pkg.scope || (pkg.registry === 'npm' ? 'npm-global' : 'pypi-global');
+      const existing = scopeMap.get(scope) || { packages: 0, size: 0 };
+      scopeMap.set(scope, {
+        packages: existing.packages + 1,
+        size: existing.size + pkg.totalSize,
+      });
+    }
+
+    const result: ScopeStats[] = [];
+    for (const [scope, data] of scopeMap.entries()) {
+      result.push({
+        scope,
+        packages: data.packages,
+        size: data.size,
+        percent: totalSize > 0 ? Math.round((data.size / totalSize) * 10000) / 100 : 0,
+      });
+    }
+
+    return result.sort((a, b) => b.size - a.size);
+  }
+
+  getLargestPackages(limit: number = 20): LargestPackage[] {
+    const pkgVersionCounts: Record<number, number> = {};
+    for (const v of this.db.versions) {
+      pkgVersionCounts[v.packageId] = (pkgVersionCounts[v.packageId] || 0) + 1;
+    }
+
+    return [...this.db.packages]
+      .sort((a, b) => b.totalSize - a.totalSize)
+      .slice(0, limit)
+      .map((p, idx) => ({
+        name: p.name,
+        registry: p.registry,
+        source: p.source,
+        scope: p.scope,
+        size: p.totalSize,
+        versions: pkgVersionCounts[p.id] || 0,
+        latestVersion: p.latestVersion,
+        updatedAt: p.updatedAt,
+        growth7d: this.calculatePackageGrowth(p.id, 7),
+        sizeRank: idx + 1,
+      }));
   }
 
   getStorageTrend(days: number = 30): StorageTrend[] {
@@ -393,6 +528,10 @@ export class MetadataIndex {
       date,
       size: stats.totalSize,
       packages: stats.totalPackages,
+      npmSize: stats.npmSize,
+      pypiSize: stats.pypiSize,
+      privateSize: stats.privateSize,
+      cacheSize: stats.cacheSize,
     };
     if (idx >= 0) {
       this.db.storageTrend[idx] = entry;
@@ -402,7 +541,43 @@ export class MetadataIndex {
     if (this.db.storageTrend.length > 365) {
       this.db.storageTrend = this.db.storageTrend.slice(-365);
     }
+
+    const byScope: Record<string, number> = {};
+    for (const pkg of this.db.packages) {
+      const scope = pkg.scope || (pkg.registry === 'npm' ? 'npm-global' : 'pypi-global');
+      byScope[scope] = (byScope[scope] || 0) + pkg.totalSize;
+    }
+
+    const snapshot: StorageSnapshot = {
+      timestamp: Date.now(),
+      totalSize: stats.totalSize,
+      npmSize: stats.npmSize,
+      pypiSize: stats.pypiSize,
+      privateSize: stats.privateSize,
+      byScope,
+    };
+    this.db.storageSnapshots.push(snapshot);
+    if (this.db.storageSnapshots.length > 365) {
+      this.db.storageSnapshots = this.db.storageSnapshots.slice(-365);
+    }
+
     this.scheduleSave();
+  }
+
+  getStorageTrendByRange(startDate?: string, endDate?: string, days?: number): StorageTrend[] {
+    let trend = [...this.db.storageTrend];
+
+    if (startDate) {
+      trend = trend.filter((t) => t.date >= startDate);
+    }
+    if (endDate) {
+      trend = trend.filter((t) => t.date <= endDate);
+    }
+    if (days && !startDate && !endDate) {
+      trend = trend.slice(-days);
+    }
+
+    return trend;
   }
 
   getCachePolicy(): CachePolicy {
